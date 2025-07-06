@@ -1,0 +1,10 @@
+version: '3'
+services:
+  signaling:
+    build: .
+    container_name: y-webrtc
+    restart: unless-stopped
+    ports:
+      - "4444:4444"
+    environment:
+      - PORT=4444

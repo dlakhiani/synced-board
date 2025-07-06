@@ -9,15 +9,16 @@ new WebrtcProvider('room-new', getYjsDoc(store), {
     signaling: ['ws://localhost:4444'],
 })
 
-// visibility filters
-const filters = {
-    all(todos: Todo[]) {
+export type Visibility = 'all' | 'active' | 'completed'
+
+const FILTERS = {
+    all: (todos: Todo[]) => {
         return todos
     },
-    active(todos: Todo[]) {
+    active: (todos: Todo[]) => {
         return todos.filter((todo) => !todo.completed)
     },
-    completed(todos: Todo[]) {
+    completed: (todos: Todo[]) => {
         return todos.filter((todo) => todo.completed)
     },
 }
@@ -26,7 +27,7 @@ export default defineComponent({
     data() {
         return {
             shared: store as { todos: Todo[] },
-            visibility: 'all' as 'all' | 'active' | 'completed',
+            visibility: 'all' as Visibility,
             newTodo: '',
             editingTodo: null as null | Todo,
             beforeEditCache: '',
@@ -34,12 +35,10 @@ export default defineComponent({
     },
     computed: {
         filteredTodos() {
-            return filters[this.visibility as 'all' | 'active' | 'completed'](
-                this.shared.todos as Todo[],
-            )
+            return FILTERS[this.visibility](this.shared.todos)
         },
         remaining() {
-            return filters.active(this.shared.todos).length
+            return FILTERS.active(this.shared.todos).length
         },
         allDone: {
             get() {
