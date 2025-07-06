@@ -62,3 +62,9 @@ npm run test:e2e -- --debug
 ```sh
 npm run lint
 ```
+
+### Spin WebRTC
+
+```sh
+PORT=4444 node server.js
+```

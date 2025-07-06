@@ -1,11 +1,11 @@
 import './assets/main.css'
 
-import { createApp } from 'vue'
+import * as Vue from 'vue'
 import App from './App.vue'
 import router from './router'
+import { enableVueBindings } from '@syncedstore/core'
 
-const app = createApp(App)
-
+enableVueBindings(Vue)
+const app = Vue.createApp(App)
 app.use(router)
-
 app.mount('#app')
