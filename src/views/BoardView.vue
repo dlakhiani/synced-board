@@ -1,65 +1,100 @@
 <script lang="ts">
-import { defineComponent } from 'vue'
+// import syncing
 import { syncedStore, getYjsDoc, filterArray } from '@syncedstore/core'
 import { WebrtcProvider } from 'y-webrtc'
 
-type Todo = { id: string; completed: boolean; title: string }
-const store = syncedStore({ todos: [] as Todo[] })
-new WebrtcProvider('room-new', getYjsDoc(store), {
-    signaling: ['ws://localhost:4444'],
-})
+// import components
+import { defineComponent } from 'vue'
+import {
+    Button,
+    Card,
+    Fieldset,
+    Textarea,
+} from 'primevue'
 
+// types
+export type Todo = { id: string; completed: boolean; title: string }
+export type User = { id: string; name: string, color: string }
 export type Visibility = 'all' | 'active' | 'completed'
 
-const FILTERS = {
-    all: (todos: Todo[]) => {
-        return todos
-    },
-    active: (todos: Todo[]) => {
-        return todos.filter((todo) => !todo.completed)
-    },
-    completed: (todos: Todo[]) => {
-        return todos.filter((todo) => todo.completed)
-    },
-}
+// sync clients
+const store = syncedStore({
+    todos: [] as Todo[],
+    users: [] as User[],
+})
+const provider = new WebrtcProvider('room-todos', getYjsDoc(store), {
+    signaling: [`wss://${import.meta.env.VITE_SIGNALING_SERVER_URL}`],
+})
+
+const awareness = provider.awareness
+awareness.setLocalStateField('user', {
+    name: awareness.clientID,
+    id: awareness.clientID,
+})
 
 export default defineComponent({
+    name: 'BoardView',
+    components: {
+        Button,
+        Card,
+        Fieldset,
+        Textarea,
+    },
     data() {
         return {
-            shared: store as { todos: Todo[] },
+            shared: store as { todos: Todo[], users: User[] },
+            userCount: 0,
+            currUser: null as User | null,
             visibility: 'all' as Visibility,
             newTodo: '',
-            editingTodo: null as null | Todo,
+            editingTodo: false as boolean,
             beforeEditCache: '',
+            columns: [
+                {
+                    status: 'Backlog',
+                    tasks: [],
+                },
+                {
+                    status: 'Todo',
+                    tasks: [{ id: 1, content: 'List all reported bugs' }],
+                },
+                {
+                    status: 'In Progress',
+                    tasks: [{ id: 8, content: 'Mobile browsing' }],
+                },
+                {
+                    status: 'Done',
+                    tasks: [],
+                },
+            ],
         }
     },
+    mounted() {
+        // init syncing
+        awareness.on('change', () => this.syncUserCount())
+        // new client => update
+        this.syncUserCount()
+
+        const currState = awareness.getLocalState() as any
+        this.currUser = currState['user'] as User
+        console.log("currUser: ", this.currUser.name)
+    },
     computed: {
-        filteredTodos() {
-            return FILTERS[this.visibility](this.shared.todos)
-        },
-        remaining() {
-            return FILTERS.active(this.shared.todos).length
-        },
-        allDone: {
-            get() {
-                return this.remaining === 0
-            },
-            set(value: boolean) {
-                this.shared.todos.forEach(todo => {
-                    todo.completed = value
-                })
-            },
+        totalUsers() {
+            return this.userCount.toString()
         },
     },
     methods: {
-        pluralize(n: number) {
-            return n === 1 ? 'item' : 'items'
+        syncUserCount() {
+            console.log("current state: ", awareness.getLocalState())
+            this.userCount = awareness.getStates().size
+            // this.shared.users
         },
+
         addTodo() {
             const value = this.newTodo && this.newTodo.trim()
-            if (!value) {
-                return
-            }
+            if (!value) return
+
             this.shared.todos.push({
                 id: Math.random().toString(),
                 title: value,
@@ -74,22 +109,24 @@ export default defineComponent({
 
         editTodo(todo: Todo) {
             this.beforeEditCache = todo.title
-            this.editingTodo = todo
+            this.editingTodo = true
         },
 
         doneEdit(todo: Todo) {
             if (!this.editingTodo) {
                 return
             }
-            this.editingTodo = null
+            this.editingTodo = false
             todo.title = todo.title.trim()
+            console.log('edit:|' + todo.title + '|')
             if (!todo.title) {
+                console.log('remove')
                 this.removeTodo(todo)
             }
         },
 
         cancelEdit(todo: Todo) {
-            this.editingTodo = null
+            this.editingTodo = false
             todo.title = this.beforeEditCache
         },
 
@@ -97,90 +134,116 @@ export default defineComponent({
             filterArray(this.shared.todos, (t) => !t.completed)
         },
     },
-
-    // a custom directive to wait for the DOM to be updated
-    // before focusing on the input field.
-    // http://vuejs.org/guide/custom-directive.html
-    directives: {
-        'todo-focus': {
-            updated(el, binding) {
-                if (binding.value) {
-                    el.focus()
-                }
-            },
-        },
-    },
 })
 </script>
 
 <template>
-    <section class="todoapp">
-        <header class="header">
-            <h1>todos</h1>
-            <input
-                class="new-todo"
-                autofocus
-                autocomplete="off"
-                placeholder="What needs to be done?"
-                v-model="newTodo"
-                @keyup.enter="addTodo"
-            />
-        </header>
-        <section class="main" v-show="shared.todos.length" v-cloak>
-            <input id="toggle-all" class="toggle-all" type="checkbox" v-model="allDone" />
-            <label for="toggle-all"></label>
-            <ul class="todo-list">
-                <li
-                    v-for="todo in filteredTodos"
-                    class="todo"
-                    :key="todo.id"
-                    :class="{ completed: todo.completed, editing: todo == editingTodo }"
-                >
-                    <div class="view">
-                        <input class="toggle" type="checkbox" v-model="todo.completed" />
-                        <label @dblclick="editTodo(todo)">{{ todo.title }}</label>
-                        <button class="destroy" @click="removeTodo(todo)"></button>
-                    </div>
-                    <input
-                        class="edit"
-                        type="text"
-                        v-model="todo.title"
-                        v-todo-focus="todo == editingTodo"
-                        @blur="doneEdit(todo)"
-                        @keyup.enter="doneEdit(todo)"
-                        @keyup.esc="cancelEdit(todo)"
-                    />
-                </li>
-            </ul>
-        </section>
-        <footer class="footer" v-show="shared.todos.length" v-cloak>
-            <span class="todo-count">
-                <strong>{{ remaining }}</strong> {{ pluralize(remaining) }} left
-            </span>
-            <ul class="filters">
-                <li>
-                    <button @click="visibility='all'">All</button>
-                </li>
-                <li>
-                    <button @click="visibility='active'">Active</button>
-                </li>
-                <li>
-                    <button @click="visibility='completed'">Completed</button>
-                </li>
-            </ul>
-            <button
-                class="clear-completed"
-                @click="removeCompleted"
-                v-show="shared.todos.length > remaining"
+    <div class="container">
+        <div class="header">
+            <div class="items-row">
+                <Button icon="pi pi-filter" variant="text" raised rounded />
+                <Button icon="pi pi-users" variant="text" raised rounded :badge="totalUsers" badge-severity="info" />
+            </div>
+            <div class="items-row">
+                <Button icon="pi pi-list" variant="text" raised rounded />
+                <Button icon="pi pi-table" variant="text" raised rounded />
+                <Button icon="pi pi-cog" variant="text" raised rounded />
+            </div>
+        </div>
+
+        <div class="board">
+            <Fieldset
+                v-for="column in columns"
+                :key="column.status"
+                :legend="column.status"
+                class="board__column"
             >
-                Clear completed
-            </button>
-        </footer>
-    </section>
+                <div class="board__column-items">
+                    <Card v-for="task in column.tasks" :key="task.id" class="board__column-item">
+                        <template #content>
+                            <p v-if="task.content">{{ task.content }}</p>
+                        </template>
+                        <template #footer>
+                            <div class="board__column-item__actions">
+                                <div class="items-row">
+                                    <Button
+                                        icon="pi pi-check"
+                                        severity="secondary"
+                                        size="small"
+                                    />
+                                </div>
+                                <div class="items-row">
+                                    <Button icon="pi pi-pencil" severity="info" size="small" />
+                                    <Button icon="pi pi-times" severity="danger" size="small" />
+                                </div>
+                            </div>
+                        </template>
+                    </Card>
+
+                    <div>
+                        <Textarea v-model="newTodo" rows="5" cols="30" auto-resize />
+
+                    </div>
+                </div>
+            </Fieldset>
+        </div>
+    </div>
 </template>
 
 <style>
-[v-cloak] {
-    display: none;
+.container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.header {
+    display: flex;
+    place-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+}
+
+.items-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.header__right {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.board {
+    display: flex;
+    gap: 1rem;
+    overflow: auto;
+    padding: 1rem;
+}
+
+.board__column {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 300px;
+    border-radius: 8px;
+}
+
+.board__column-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-height: 100px;
+}
+
+.board__column-item {
+    border: 2px solid var(--p-emerald-300);
+}
+
+.board__column-item__actions {
+    display: flex;
+    justify-content: space-between;
+    place-items: center;
 }
 </style>
